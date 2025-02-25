@@ -1,68 +1,74 @@
 package task3;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.io.File;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
 public class FillReportJson {
     public static void main(String[] args) {
-        if (args.length < 3) {
-            System.out.println("Usage: java FillReportJson <values.json> <tests.json> <report.json>");
+        if (args.length != 3) {
+            System.out.println("Необходимо передать три аргумента: путь к tests.json, values.json и output.json.");
             return;
         }
 
-        String valuesPath = args[0];
-        String testsPath = args[1];
-        String reportPath = args[2];
+        String testsFilePath = args[0];
+        String valuesFilePath = args[1];
+        String outputFilePath = args[2];
 
         try {
-            ObjectMapper mapper = new ObjectMapper();
+            // Чтение входных JSON файлов
+            String testsJsonContent = new String(Files.readAllBytes(Paths.get(testsFilePath)));
+            String valuesJsonContent = new String(Files.readAllBytes(Paths.get(valuesFilePath)));
 
-            // Чтение файлов
-            JsonNode valuesNode = mapper.readTree(new File(valuesPath));
-            JsonNode testsNode = mapper.readTree(new File(testsPath));
+            // Преобразуем в JSON объекты
+            JSONObject testsJson = new JSONObject(testsJsonContent);
+            JSONArray testsArray = testsJson.getJSONArray("tests");
 
-            // Создаем карту id → value
+            JSONObject valuesJson = new JSONObject(valuesJsonContent);
+            JSONArray valuesArray = valuesJson.getJSONArray("values");
+
+            // Создаем отображение ID в значениях для быстрого поиска
             Map<Integer, String> valuesMap = new HashMap<>();
-            JsonNode valuesArray = valuesNode.get("values");
-            if (valuesArray != null && valuesArray.isArray()) {
-                for (JsonNode value : valuesArray) {
-                    valuesMap.put(value.get("id").asInt(), value.get("value").asText());
-                }
-            } else {
-                System.out.println("Поле 'values' не найдено или не является массивом!");
+            for (int i = 0; i < valuesArray.length(); i++) {
+                JSONObject valueObj = valuesArray.getJSONObject(i);
+                int id = valueObj.getInt("id");
+                String value = valueObj.getString("value");
+                valuesMap.put(id, value);
             }
 
-            // Заполняем тесты результатами
-            fillTestValues(testsNode, valuesMap);
+            // Заполняем значения в tests.json
+            fillValues(testsArray, valuesMap);
 
-            // Сохраняем результат
-            mapper.writerWithDefaultPrettyPrinter().writeValue(new File(reportPath), testsNode);
+            // Записываем результат в файл report.json
+            Files.write(Paths.get(outputFilePath), testsJson.toString(4).getBytes());
 
-            System.out.println("Report generated: " + reportPath);
+            System.out.println("Отчет успешно сгенерирован: " + outputFilePath);
+
         } catch (IOException e) {
-            System.out.println("Error processing files: " + e.getMessage());
+            System.out.println("Ошибка при чтении файлов: " + e.getMessage());
         }
     }
 
-    private static void fillTestValues(JsonNode node, Map<Integer, String> valuesMap) {
-        if (node.isArray()) {
-            for (JsonNode item : node) {
-                fillTestValues(item, valuesMap);
+    // Рекурсивная функция для заполнения значений
+    private static void fillValues(JSONArray testsArray, Map<Integer, String> valuesMap) {
+        for (int i = 0; i < testsArray.length(); i++) {
+            JSONObject testObj = testsArray.getJSONObject(i);
+
+            // Заполняем значение для текущего теста
+            int testId = testObj.getInt("id");
+            if (valuesMap.containsKey(testId)) {
+                testObj.put("value", valuesMap.get(testId));
             }
-        } else if (node.isObject()) {
-            if (node.has("id") && node.has("value")) {
-                int id = node.get("id").asInt();
-                if (valuesMap.containsKey(id)) {
-                    ((ObjectNode) node).put("value", valuesMap.get(id));
-                }
-            }
-            if (node.has("values")) {
-                fillTestValues(node.get("values"), valuesMap);
+
+            // Если есть вложенные значения, вызываем рекурсивно
+            if (testObj.has("values")) {
+                JSONArray subTestsArray = testObj.getJSONArray("values");
+                fillValues(subTestsArray, valuesMap);
             }
         }
     }
